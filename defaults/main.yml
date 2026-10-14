@@ -15,6 +15,8 @@ jumpserver_asset_protocols:
 # Nodes by full path (as shown in the UI) or UUID; empty = default node
 jumpserver_asset_nodes: []
 #  - /DEFAULT/test-node1/sub-node1
+# Zone (with gateway) by name or UUID; empty = no zone
+jumpserver_asset_zone: ""
 jumpserver_asset_labels: []
 jumpserver_asset_comment: "Managed by Ansible"
 jumpserver_asset_is_active: true

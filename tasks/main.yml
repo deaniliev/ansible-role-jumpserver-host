@@ -117,6 +117,33 @@
   loop: "{{ jumpserver_asset_nodes }}"
   when: jumpserver_asset_state == 'present' and jumpserver_asset_nodes | length > 0
 
+- name: Look up zone
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url | regex_replace('hosts/$', 'zones/') }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+      Accept: application/json
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+  check_mode: false
+  changed_when: false
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_zone | length > 0
+  register: jumpserver_zone_lookup
+
+- name: Resolve zone (name to id)
+  ansible.builtin.set_fact:
+    jumpserver_zone_id: >-
+      {{ jumpserver_asset_zone
+         if jumpserver_asset_zone is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+         else (jumpserver_zone_lookup.json.results | default(jumpserver_zone_lookup.json))
+              | selectattr('name', 'equalto', jumpserver_asset_zone) | map(attribute='id') | list | first }}
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_zone | length > 0
+
 - name: Create asset
   ansible.builtin.uri:
     url: "{{ jumpserver_api_url }}"
@@ -139,7 +166,8 @@
         'comment': jumpserver_asset_comment,
         'labels': jumpserver_asset_labels,
         'accounts': jumpserver_asset_accounts + (jumpserver_template_accounts | default([]))
-      } | combine({'nodes': jumpserver_node_ids} if jumpserver_asset_nodes else {}) }}
+      } | combine({'nodes': jumpserver_node_ids} if jumpserver_asset_nodes else {})
+        | combine({'zone': jumpserver_zone_id} if jumpserver_asset_zone | length > 0 else {}) }}
   delegate_to: localhost
   become: false
   no_log: true

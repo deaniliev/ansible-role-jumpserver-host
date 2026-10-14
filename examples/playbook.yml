@@ -29,6 +29,7 @@
             port: 22
         jumpserver_asset_nodes:
           - /DEFAULT/test-node1/sub-node1
+        jumpserver_asset_zone: ""          # e.g. "TestZone" - zone with gateway
         jumpserver_asset_labels: []
         jumpserver_asset_comment: "Managed by Ansible"
         jumpserver_asset_is_active: true

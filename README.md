@@ -8,8 +8,8 @@ Behaviour:
 - `present`: creates the asset if no asset with the exact name exists; otherwise patches
   `address`, `is_active` and `comment` when they differ.
 - `absent`: deletes the asset if it exists.
-- Platform, nodes and account templates are given by name/path and resolved to ids via the API.
-- Platform, nodes, protocols, labels and accounts are applied **only on creation**.
+- Platform, nodes, zone and account templates are given by name/path and resolved to ids via the API.
+- Platform, nodes, zone, protocols, labels and accounts are applied **only on creation**.
 - API tokens never appear in logs (`no_log`).
 
 Tested with Ansible 8.6 (ansible-core 2.15) and a JumpServer v3+/v4 API.
@@ -35,6 +35,7 @@ Tested with Ansible 8.6 (ansible-core 2.15) and a JumpServer v3+/v4 API.
 | `jumpserver_asset_platform` | `Linux` | Platform name or numeric id. |
 | `jumpserver_asset_protocols` | `[{name: ssh, port: 22}]` | List of `{name, port}`. |
 | `jumpserver_asset_nodes` | `[]` | Nodes by full path (e.g. `/DEFAULT/test-node1/sub-node1`) or UUID. Empty = default node. Unknown path fails the play. |
+| `jumpserver_asset_zone` | `""` | Zone (the one with the gateway) by name or UUID, applied on creation. Empty = no zone. Unknown name fails the play. |
 | `jumpserver_asset_labels` | `[]` | Labels as accepted by the API. |
 | `jumpserver_asset_comment` | `Managed by Ansible` | Asset comment. |
 | `jumpserver_asset_is_active` | `true` | Whether the asset is enabled. |
@@ -80,6 +81,7 @@ Full playbook (also in `examples/playbook.yml`).
             port: 22
         jumpserver_asset_nodes:
           - /DEFAULT/test-node1/sub-node1
+        jumpserver_asset_zone: ""          # e.g. "TestZone" - zone with gateway
         jumpserver_asset_labels: []
         jumpserver_asset_comment: "Managed by Ansible"
         jumpserver_asset_is_active: true
