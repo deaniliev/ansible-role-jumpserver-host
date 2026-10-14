@@ -1,0 +1,193 @@
+---
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - jumpserver_host | length > 0
+      - jumpserver_token | length > 0
+    fail_msg: "jumpserver_host and jumpserver_token must be set"
+    quiet: true
+
+- name: Set JumpServer API URL
+  ansible.builtin.set_fact:
+    jumpserver_api_url: >-
+      {{ (jumpserver_host if '://' in jumpserver_host else 'https://' ~ jumpserver_host)
+         | regex_replace('/+$', '') }}/api/v1/assets/hosts/
+
+- name: Look up existing asset
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url }}?name={{ jumpserver_asset_name | urlencode }}&limit=100"
+    method: GET
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+      Accept: application/json
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+  check_mode: false
+  changed_when: false
+  register: jumpserver_lookup
+
+- name: Determine existing asset
+  ansible.builtin.set_fact:
+    jumpserver_existing: >-
+      {{ (jumpserver_lookup.json.results | default(jumpserver_lookup.json))
+         | selectattr('name', 'equalto', jumpserver_asset_name) | list | first | default({}) }}
+
+- name: Look up platform
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url | regex_replace('hosts/$', 'platforms/') }}?name={{ jumpserver_asset_platform | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+      Accept: application/json
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+  check_mode: false
+  changed_when: false
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_platform is not number
+  register: jumpserver_platform_lookup
+
+- name: Determine platform id
+  ansible.builtin.set_fact:
+    jumpserver_platform_id: >-
+      {{ jumpserver_asset_platform if jumpserver_asset_platform is number else
+         ((jumpserver_platform_lookup.json.results | default(jumpserver_platform_lookup.json))
+          | selectattr('name', 'equalto', jumpserver_asset_platform) | map(attribute='id') | list | first) }}
+  when: jumpserver_asset_state == 'present'
+
+- name: Look up account templates
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url | regex_replace('assets/hosts/$', 'accounts/account-templates/') }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+      Accept: application/json
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+  check_mode: false
+  changed_when: false
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_account_templates | length > 0
+  register: jumpserver_template_lookup
+
+- name: Resolve account templates
+  ansible.builtin.set_fact:
+    jumpserver_template_accounts: >-
+      {{ jumpserver_template_accounts | default([]) + [{'template': (
+           (jumpserver_template_lookup.json.results | default(jumpserver_template_lookup.json))
+           | selectattr('name', 'equalto', item) | map(attribute='id') | list | first)}] }}
+  loop: "{{ jumpserver_asset_account_templates }}"
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_account_templates | length > 0
+
+- name: Look up nodes
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url | regex_replace('hosts/$', 'nodes/') }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+      Accept: application/json
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+    return_content: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+  check_mode: false
+  changed_when: false
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_nodes | length > 0
+  register: jumpserver_node_lookup
+
+- name: Resolve nodes (full path to id)
+  ansible.builtin.set_fact:
+    jumpserver_node_ids: >-
+      {{ jumpserver_node_ids | default([]) + [
+           item if item is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') else
+           (jumpserver_node_lookup.json.results | default(jumpserver_node_lookup.json))
+           | selectattr('full_value', 'equalto', item) | map(attribute='id') | list | first] }}
+  loop: "{{ jumpserver_asset_nodes }}"
+  when: jumpserver_asset_state == 'present' and jumpserver_asset_nodes | length > 0
+
+- name: Create asset
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url }}"
+    method: POST
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+    body_format: json
+    body: "{{ jumpserver_asset_payload }}"
+    status_code: 201
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+  vars:
+    jumpserver_asset_payload: >-
+      {{ {
+        'name': jumpserver_asset_name,
+        'address': jumpserver_asset_address,
+        'platform': jumpserver_platform_id | int,
+        'protocols': jumpserver_asset_protocols,
+        'is_active': jumpserver_asset_is_active,
+        'comment': jumpserver_asset_comment,
+        'labels': jumpserver_asset_labels,
+        'accounts': jumpserver_asset_accounts + (jumpserver_template_accounts | default([]))
+      } | combine({'nodes': jumpserver_node_ids} if jumpserver_asset_nodes else {}) }}
+  delegate_to: localhost
+  become: false
+  no_log: true
+  changed_when: true
+  when:
+    - jumpserver_asset_state == 'present'
+    - jumpserver_existing | length == 0
+
+- name: Update asset when attributes differ
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url }}{{ jumpserver_existing.id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+    body_format: json
+    body:
+      address: "{{ jumpserver_asset_address }}"
+      protocols: "{{ jumpserver_asset_protocols }}"
+      is_active: "{{ jumpserver_asset_is_active }}"
+      comment: "{{ jumpserver_asset_comment }}"
+    status_code: 200
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+  delegate_to: localhost
+  become: false
+  no_log: true
+  changed_when: true
+  when:
+    - jumpserver_asset_state == 'present'
+    - jumpserver_existing | length > 0
+    - >-
+      jumpserver_existing.address != jumpserver_asset_address
+      or jumpserver_existing.is_active != jumpserver_asset_is_active
+      or (jumpserver_existing.comment | default('')) != jumpserver_asset_comment
+
+- name: Delete asset
+  ansible.builtin.uri:
+    url: "{{ jumpserver_api_url }}{{ jumpserver_existing.id }}/"
+    method: DELETE
+    headers:
+      Authorization: "Token {{ jumpserver_token }}"
+    status_code: 204
+    validate_certs: "{{ jumpserver_validate_certs }}"
+    timeout: "{{ jumpserver_api_timeout }}"
+  delegate_to: localhost
+  become: false
+  no_log: true
+  changed_when: true
+  when:
+    - jumpserver_asset_state == 'absent'
+    - jumpserver_existing | length > 0

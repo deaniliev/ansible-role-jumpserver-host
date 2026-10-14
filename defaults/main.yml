@@ -1,0 +1,34 @@
+---
+# JumpServer API connection
+jumpserver_host: ""            # hostname or full URL, e.g. js.example.com or https://js.example.com
+jumpserver_token: ""           # private token
+jumpserver_validate_certs: true
+jumpserver_api_timeout: 30
+
+# Asset to register (defaults to the current inventory host)
+jumpserver_asset_name: "{{ inventory_hostname }}"
+jumpserver_asset_address: "{{ ansible_host | default(inventory_hostname) }}"
+jumpserver_asset_platform: Linux   # platform name or numeric id
+jumpserver_asset_protocols:
+  - name: ssh
+    port: 22
+# Nodes by full path (as shown in the UI) or UUID; empty = default node
+jumpserver_asset_nodes: []
+#  - /DEFAULT/test-node1/sub-node1
+jumpserver_asset_labels: []
+jumpserver_asset_comment: "Managed by Ansible"
+jumpserver_asset_is_active: true
+
+# Account templates (by name) to attach on creation, e.g. [root]
+jumpserver_asset_account_templates: []
+
+# Optional account (login credential) for the asset
+jumpserver_asset_accounts: []
+#  - name: root
+#    username: root
+#    secret_type: ssh_key     # or password
+#    secret: "{{ lookup('file', '~/.ssh/id_ed25519') }}"
+#    privileged: true
+
+# present | absent
+jumpserver_asset_state: present

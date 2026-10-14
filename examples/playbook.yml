@@ -1,0 +1,45 @@
+---
+# Full example. Usage:
+#   ansible-playbook -i examples/inventory.yml examples/playbook.yml
+# Remove the hosts again:
+#   ansible-playbook -i examples/inventory.yml examples/playbook.yml -e jumpserver_asset_state=absent
+#
+# JS_HOST and TOKEN are read from ../.env (git-ignored).
+- name: Register hosts in JumpServer
+  hosts: all
+  gather_facts: false
+  vars:
+    env_file: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../.env') }}"
+  roles:
+    - role: "{{ playbook_dir }}/.."
+      vars:
+        # --- connection ---
+        jumpserver_host: "{{ env_file | regex_search('(?m)^JS_HOST=(.*)$', '\\1') | first | trim }}"
+        jumpserver_token: "{{ env_file | regex_search('(?m)^TOKEN=(.*)$', '\\1') | first | trim }}"
+        jumpserver_validate_certs: true
+        jumpserver_api_timeout: 30
+
+        # --- asset ---
+        jumpserver_asset_state: present
+        jumpserver_asset_name: "{{ inventory_hostname }}"
+        jumpserver_asset_address: "{{ ansible_host | default(inventory_hostname) }}"
+        jumpserver_asset_platform: Linux
+        jumpserver_asset_protocols:
+          - name: ssh
+            port: 22
+        jumpserver_asset_nodes:
+          - /DEFAULT/test-node1/sub-node1
+        jumpserver_asset_labels: []
+        jumpserver_asset_comment: "Managed by Ansible"
+        jumpserver_asset_is_active: true
+
+        # --- accounts ---
+        jumpserver_asset_account_templates:
+          - root
+        jumpserver_asset_accounts: []
+        # Inline account example (instead of / in addition to a template):
+        #  - name: deploy
+        #    username: deploy
+        #    secret_type: ssh_key
+        #    secret: "{{ lookup('ansible.builtin.file', '~/.ssh/id_ed25519') }}"
+        #    privileged: false

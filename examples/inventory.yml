@@ -1,0 +1,4 @@
+all:
+  hosts:
+    jstest-ansible:
+      ansible_host: 157.180.37.255
